@@ -1,55 +1,74 @@
 import pytest
 
+from data import BUN_DATA, INGREDIENTS_DATA
+
+
 class TestBurger:
 
-    # изначальное состояние (без ингредиентов)
-    def test_burger_initialization(self, new_burger):
-        assert new_burger.bun is None
-        assert new_burger.ingredients == []
+    def test_burger_without_ingredients_costs_only_two_buns(self, make_burger):
+        burger = make_burger()
 
-    # проверяем добав. одной булки
-    def test_set_buns_single_bun_added_in_burger(self, new_burger, bun_in_burger):
+        assert burger.get_price() == 2 * BUN_DATA["price"]
+
+    def test_set_buns_displays_bun_in_receipt(self, new_burger, bun_in_burger):
         new_burger.set_buns(bun_in_burger)
-        assert new_burger.bun == bun_in_burger
 
-    # Проверка добавления 2-ух ингрдтв. в бугрере
-    def test_add_ingredient_two_ingridients_added_in_burger(self, new_burger, ingredients_in_burger):
-        new_burger.add_ingredient(ingredients_in_burger[0])
-        new_burger.add_ingredient(ingredients_in_burger[1])
-        assert ingredients_in_burger[0] and ingredients_in_burger[1] in new_burger.ingredients
+        bun_line = f'(==== {BUN_DATA["name"]} ====)'
+        assert new_burger.get_receipt().splitlines()[:2] == [bun_line, bun_line]
 
-    # удаляем первый ингредиент 
-    def test_remove_ingredient_first_ingredient_delete_from_burger(self, new_burger, ingredients_in_burger):
-        new_burger.ingredients = ingredients_in_burger.copy()
-        new_burger.remove_ingredient(0)
-        expected_ingredients = ingredients_in_burger[1:]
-        assert new_burger.ingredients == expected_ingredients
+    def test_add_ingredient_displays_both_ingredients_in_receipt(
+        self, make_burger, ingredients_in_burger
+    ):
+        burger = make_burger()
+        burger.add_ingredient(ingredients_in_burger[0])
+        burger.add_ingredient(ingredients_in_burger[1])
 
-    # ингредиенты внутри списка
-    def test_move_ingredient_moves_two_ingredient_in_burger_changed(self, new_burger, ingredients_in_burger):
-        new_burger.ingredients = ingredients_in_burger.copy()
-        new_burger.move_ingredient(0, 1)
-        assert new_burger.ingredients[0] == ingredients_in_burger[1] and new_burger.ingredients[1] == ingredients_in_burger[0]
+        ingredient_lines = burger.get_receipt().splitlines()[1:-3]
+        assert ingredient_lines == ["= sauce hot sauce =", "= filling cutlet ="]
 
-    # расчет цены
-    @pytest.mark.parametrize("ingredients", [[0, 1], [1, 2], [0, 2], [0, 1, 2]])
-    def test_get_price_various_ingredients_correct_price(self, mocked_burger, bun_in_burger, ingredients_in_burger, ingredients):
-        selected_ingredients = [ingredients_in_burger[i] for i in ingredients]
-        mocked_burger.ingredients = selected_ingredients
-        expected_price = bun_in_burger.get_price.return_value * 2 + sum(i.get_price.return_value for i in selected_ingredients)
-        price = mocked_burger.get_price()
-        assert price == expected_price
+    def test_remove_ingredient_leaves_other_ingredients_in_receipt(self, make_burger):
+        burger = make_burger((0, 1, 2))
+        burger.remove_ingredient(0)
 
-    # чек
-    @pytest.mark.parametrize("ingredients", [[0, 1], [1, 2], [0, 2], [0, 1, 2]])
-    def test_get_receipt_various_ingredients_expected_price(self, mocked_burger, bun_in_burger, ingredients_in_burger, ingredients):
-        selected_ingredients = [ingredients_in_burger[i] for i in ingredients]
-        mocked_burger.ingredients = selected_ingredients
-        receipt = mocked_burger.get_receipt()
-        expected_lines = [f'(==== {bun_in_burger.get_name.return_value} ====)']
-        expected_lines += [f'= {ing.get_type.return_value.lower()} {ing.get_name.return_value} =' for ing in selected_ingredients]
-        expected_lines.append(f'(==== {bun_in_burger.get_name.return_value} ====)\n')
-        expected_lines.append(f'Price: {mocked_burger.get_price()}')
-        expected_receipt = '\n'.join(expected_lines)
-        assert receipt == expected_receipt
-        
+        ingredient_lines = burger.get_receipt().splitlines()[1:-3]
+        assert ingredient_lines == ["= filling cutlet =", "= filling shaverma ="]
+
+    def test_move_ingredient_changes_order_in_receipt(self, make_burger):
+        burger = make_burger((0, 1, 2))
+        burger.move_ingredient(0, 1)
+
+        ingredient_lines = burger.get_receipt().splitlines()[1:-3]
+        assert ingredient_lines == [
+            "= filling cutlet =",
+            "= sauce hot sauce =",
+            "= filling shaverma =",
+        ]
+
+    @pytest.mark.parametrize(
+        "ingredient_indices, expected_price",
+        [
+            ((0, 1), 3024),
+            ((1, 2), 3448),
+            ((0, 2), 3114),
+            ((0, 1, 2), 3538),
+        ],
+    )
+    def test_get_price_matches_expected_total(self, make_burger, ingredient_indices, expected_price):
+        burger = make_burger(ingredient_indices)
+
+        assert burger.get_price() == expected_price
+
+    @pytest.mark.parametrize("ingredient_indices", [(0, 1), (1, 2), (0, 2), (0, 1, 2)])
+    def test_get_receipt_displays_ingredients_and_total(self, make_burger, ingredient_indices):
+        burger = make_burger(ingredient_indices)
+        bun_line = f'(==== {BUN_DATA["name"]} ====)'
+        ingredients = [INGREDIENTS_DATA[index] for index in ingredient_indices]
+        expected_price = 2 * BUN_DATA["price"] + sum(ingredient["price"] for ingredient in ingredients)
+        ingredient_lines = [
+            f'= {ingredient["type"].lower()} {ingredient["name"]} ='
+            for ingredient in ingredients
+        ]
+        expected_receipt = "\n".join([bun_line, *ingredient_lines, bun_line, "", f"Price: {expected_price}"])
+
+        assert burger.get_receipt() == expected_receipt
+    
